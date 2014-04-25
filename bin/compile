@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# bin/compile <build-dir> <cache-dir>
+
+# fail fast
+set -e
+
+# debug
+# set -x
+
+# clean up leaking environment
+unset GIT_DIR
+
+# config
+STUNNEL_VERSION="5.01"
+#TODO: Update source bucket
+S3_BUCKET="gregburek-buildpack-pgbouncer"
+
+# parse and derive params
+BUILD_DIR=$1
+CACHE_DIR=$2
+LP_DIR=`cd $(dirname $0); cd ..; pwd`
+BUILDPACK_DIR="$(dirname $(dirname $0))"
+
+function error() {
+  echo " !     $*" >&2
+  exit 1
+}
+
+function indent() {
+  c='s/^/       /'
+  case $(uname) in
+    Darwin) sed -l "$c";;
+    *)      sed -u "$c";;
+  esac
+}
+
+function package_download() {
+  engine="$1"
+  version="$2"
+  location="$3"
+
+  mkdir -p $location
+  package="https://${S3_BUCKET}.s3.amazonaws.com/$engine-$version.tgz"
+  curl $package -s -o - | tar xzf - -C $location
+}
+
+echo "Using stunnel version: ${STUNNEL_VERSION}" | indent
+
+# vendor directories
+VENDORED_STUNNEL="vendor/stunnel"
+
+# vendor stunnel into the slug
+PATH="$BUILD_DIR/$VENDORED_STUNNEL/bin:$PATH"
+echo "-----> Fetching and vendoring stunnel into slug"
+mkdir -p "$BUILD_DIR/$VENDORED_STUNNEL"
+package_download "stunnel" "${STUNNEL_VERSION}" "${BUILD_DIR}/${VENDORED_STUNNEL}"
+
+echo "-----> Moving the configuration generation script into app/bin"
+mkdir -p $BUILD_DIR/bin
+cp "$BUILDPACK_DIR/bin/gen-stunnel-conf.sh" $BUILD_DIR/bin
+chmod +x $BUILD_DIR/bin/gen-stunnel-conf.sh
+
+echo "-----> Moving the start-stunnel script into app/bin"
+mkdir -p $BUILD_DIR/bin
+cp "$BUILDPACK_DIR/bin/start-stunnel" $BUILD_DIR/bin/
+chmod +x $BUILD_DIR/bin/start-stunnel
+
+echo "-----> stunnel done"
